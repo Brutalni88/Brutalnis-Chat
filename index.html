@@ -2,93 +2,69 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Void Chat</title>
-    <script src="https://js.pusher.com/8.0.1/pusher.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
     <style>
-        body { background-color: #000; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; margin: 0; overflow: hidden; }
+        body { background-color: #000; color: white; font-family: 'Segoe UI', sans-serif; display: flex; height: 100vh; margin: 0; overflow: hidden; }
         
-        /* Left Panel */
-        #user-list { width: 20%; border-right: 1px solid #333; padding: 20px; background: #0a0a0a; box-shadow: 2px 0 10px rgba(0,0,0,0.5); }
-        
-        /* Center Chat */
+        /* Layout */
+        #user-list { width: 20%; border-right: 1px solid #333; padding: 20px; background: #0a0a0a; }
         #chat-area { flex: 1; display: flex; flex-direction: column; background: #111; }
-        #messages { flex: 1; padding: 25px; overflow-y: auto; color: #ddd; scrollbar-width: thin; }
-        #messages b { color: #888; margin-right: 8px; }
-        
-        /* Input Bar */
+        #messages { flex: 1; padding: 20px; overflow-y: auto; color: #ddd; }
         #input-area { padding: 20px; border-top: 1px solid #333; background: #0a0a0a; display: flex; }
+        
+        /* UI Elements */
         input { background: #1a1a1a; border: 1px solid #333; color: white; padding: 12px; flex: 1; border-radius: 5px; outline: none; }
-        input:focus { border-color: #555; }
-
-        /* Right Panel */
         #settings { width: 20%; border-left: 1px solid #333; padding: 20px; background: #0a0a0a; }
         .admin-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #333; }
         
+        /* Messages */
+        .msg { margin-bottom: 12px; line-height: 1.4; }
+        .msg b { color: #888; margin-right: 8px; }
         img { max-width: 100%; border-radius: 8px; margin: 10px 0; border: 1px solid #444; }
-        .system { color: #ff4444; font-weight: bold; }
-        h3 { border-bottom: 1px solid #222; padding-bottom: 10px; color: #555; text-transform: uppercase; font-size: 0.9em; }
+        .sys { color: #ff4444; font-weight: bold; }
     </style>
 </head>
 <body>
 
     <div id="user-list">
-        <h3>Online</h3>
-        <ul id="users" style="list-style: none; padding: 0;"><li>Unnamed (You)</li></ul>
+        <h3 style="color:#555; font-size:0.8em;">ONLINE</h3>
+        <ul id="users" style="list-style:none; padding:0;"><li>Unnamed (You)</li></ul>
     </div>
 
     <div id="chat-area">
         <div id="messages"></div>
         <div id="input-area">
-            <input type="text" id="msgInput" placeholder="Send a message or GIF link...">
+            <input type="text" id="msgInput" placeholder="Type a message or image URL...">
         </div>
     </div>
 
     <div id="settings">
-        <h3>Settings</h3>
-        <label style="color: #555; font-size: 0.8em;">USERNAMNE</label><br>
-        <input type="text" id="nameInput" placeholder="Unnamed" oninput="updateName()" maxlength="12"><br><br>
+        <h3 style="color:#555; font-size:0.8em;">SETTINGS</h3>
+        <label>Your Name:</label><br>
+        <input type="text" id="nameInput" placeholder="Unnamed" maxlength="12" oninput="updateName()"><br><br>
         
         <div class="admin-section">
-            <label style="color: #555; font-size: 0.8em;">ADMIN KEY</label><br>
+            <label>Admin Key:</label><br>
             <input type="password" id="adminKey" placeholder="••••••••">
         </div>
     </div>
 
     <script>
-        // CONFIG
-        const PUSHER_KEY = "52d32fe20e7fcc47f6f9";
-        const CLUSTER = "eu";
-        const ADMIN_PASS = "ACC19240ADMIN05143";
-        let isTimedOut = false;
-
-        // PUSHER SETUP
-        const pusher = new Pusher(PUSHER_KEY, { cluster: CLUSTER, forceTLS: true });
-        const channel = pusher.subscribe('private-chat'); 
-
-        // Listen for messages from others
-        channel.bind('client-msg', function(data) {
-            if (data.type === 'img') { addImg(data.name, data.text); } 
-            else { addMessage(data.name, data.text, "white"); }
-        });
-
-        // Listen for admin timeouts
-        channel.bind('client-timeout', function(data) {
-            addMessage("SYSTEM", `${data.target} has been timed out for 5 mins.`, "red");
-            if (nameInput.value === data.target) {
-                isTimedOut = true;
-                setTimeout(() => { isTimedOut = false; }, 300000);
-            }
-        });
+        // Connect to the network
+        const gun = Gun(['https://gun-manhattan.herokuapp.com/gun']);
+        const chat = gun.get('brutalnis-void-v2'); // New room name for fresh start
 
         const msgInput = document.getElementById('msgInput');
-        const messages = document.getElementById('messages');
         const nameInput = document.getElementById('nameInput');
+        const messagesDiv = document.getElementById('messages');
         const adminKey = document.getElementById('adminKey');
+        const ADMIN_PASS = "ACC19240ADMIN05143";
 
+        // --- SENDING ---
         msgInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') {
-                if (isTimedOut) { alert("You are timed out saar."); return; }
-                
                 let val = msgInput.value.trim();
                 let username = nameInput.value || "Unnamed";
                 if (!val) return;
@@ -97,39 +73,47 @@
                 if (val.startsWith('/timeout ')) {
                     if (adminKey.value === ADMIN_PASS) {
                         let target = val.replace('/timeout ', '').replace('@', '');
-                        channel.trigger('client-timeout', { target: target });
+                        chat.get('system').put({ type: 'timeout', target: target, time: Date.now() });
                     } else {
-                        addMessage("SYSTEM", "Wrong Admin Key, geg.", "red");
+                        addMessage("SYSTEM", "Wrong Admin Key geg.", "red");
                     }
                 } 
-                // Image Logic
-                else if (val.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
-                    channel.trigger('client-msg', { name: username, text: val, type: 'img' });
-                    addImg(username, val);
-                } 
-                // Text Logic
                 else {
-                    channel.trigger('client-msg', { name: username, text: val, type: 'text' });
-                    addMessage(username, val, "white");
+                    let type = val.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? 'img' : 'text';
+                    chat.set({ name: username, text: val, type: type, time: Date.now() });
                 }
                 msgInput.value = '';
             }
         });
 
-        function addMessage(user, text, color) {
-            let div = document.createElement('div');
-            div.style.marginBottom = "12px";
-            div.innerHTML = `<b style="${user === 'SYSTEM' ? 'color:red' : ''}">${user}:</b> <span style="color:${color}">${text}</span>`;
-            messages.appendChild(div);
-            messages.scrollTop = messages.scrollHeight;
-        }
+        // --- RECEIVING ---
+        chat.map().once((data) => {
+            if (!data || !data.name) return;
 
-        function addImg(user, url) {
+            // 24 Hour Purge Logic
+            const dayAgo = Date.now() - (24 * 60 * 60 * 1000);
+            if (data.time < dayAgo) return;
+
+            addMessage(data.name, data.text, data.type === 'img' ? 'img' : 'white');
+        });
+
+        // System Listeners
+        chat.get('system').on((data) => {
+            if (data.type === 'timeout') {
+                addMessage("SYSTEM", `${data.target} has been timed out.`, "red");
+            }
+        });
+
+        function addMessage(user, text, mode) {
             let div = document.createElement('div');
-            div.style.marginBottom = "12px";
-            div.innerHTML = `<b>${user}:</b><br><img src="${url}">`;
-            messages.appendChild(div);
-            messages.scrollTop = messages.scrollHeight;
+            div.className = "msg";
+            if (mode === 'img') {
+                div.innerHTML = `<b>${user}:</b><br><img src="${text}">`;
+            } else {
+                div.innerHTML = `<b style="${user === 'SYSTEM' ? 'color:red' : ''}">${user}:</b> <span style="color:${mode}">${text}</span>`;
+            }
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
         function updateName() {
