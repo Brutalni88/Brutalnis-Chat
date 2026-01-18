@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Void Chat</title>
+    <style>
+        body { background-color: #000; color: white; font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
+        /* Left Panel: Users */
+        #user-list { width: 20%; border-right: 1px solid #333; padding: 20px; background: #0a0a0a; }
+        /* Center: Chat */
+        #chat-area { flex: 1; display: flex; flex-direction: column; background: #111; }
+        #messages { flex: 1; padding: 20px; overflow-y: auto; color: white; }
+        #input-area { padding: 20px; border-top: 1px solid #333; display: flex; }
+        input { background: #222; border: 1px solid #444; color: white; padding: 10px; flex: 1; }
+        /* Right Panel: Settings */
+        #settings { width: 20%; border-left: 1px solid #333; padding: 20px; background: #0a0a0a; }
+        .admin-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #333; }
+        img { max-width: 200px; display: block; margin: 10px 0; }
+    </style>
+</head>
+<body>
+
+    <div id="user-list">
+        <h3>Online</h3>
+        <ul id="users"><li>Unnamed</li></ul>
+    </div>
+
+    <div id="chat-area">
+        <div id="messages"></div>
+        <div id="input-area">
+            <input type="text" id="msgInput" placeholder="Type a message or image URL...">
+        </div>
+    </div>
+
+    <div id="settings">
+        <h3>Settings</h3>
+        <label>Your Name:</label><br>
+        <input type="text" id="nameInput" placeholder="Unnamed" oninput="updateName()"><br><br>
+        
+        <div class="admin-section">
+            <label>Admin Key:</label><br>
+            <input type="password" id="adminKey" placeholder="Enter key...">
+        </div>
+    </div>
+
+    <script>
+        const msgInput = document.getElementById('msgInput');
+        const messages = document.getElementById('messages');
+        const nameInput = document.getElementById('nameInput');
+        const adminKey = document.getElementById('adminKey');
+        const ADMIN_PASS = "ACC19240ADMIN05143";
+
+        msgInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                let val = msgInput.value;
+                let username = nameInput.value || "Unnamed";
+
+                // Admin Logic for Timeout
+                if (val.startsWith('/timeout ')) {
+                    if (adminKey.value === ADMIN_PASS) {
+                        let target = val.replace('/timeout ', '');
+                        addMessage("System", `User ${target} has been timed out for 5 mins.`, "red");
+                    } else {
+                        addMessage("System", "Wrong Admin Key, geg.", "red");
+                    }
+                } 
+                // Image/GIF Logic
+                else if (val.match(/\.(jpeg|jpg|gif|png)$/) != null) {
+                    addImg(username, val);
+                } 
+                // Normal Text
+                else {
+                    addMessage(username, val, "white");
+                }
+                msgInput.value = '';
+            }
+        });
+
+        function addMessage(user, text, color) {
+            let div = document.createElement('div');
+            div.style.color = color;
+            div.innerHTML = `<b>${user}:</b> ${text}`;
+            messages.appendChild(div);
+        }
+
+        function addImg(user, url) {
+            let div = document.createElement('div');
+            div.innerHTML = `<b>${user}:</b><br><img src="${url}">`;
+            messages.appendChild(div);
+        }
+
+        function updateName() {
+            document.querySelector('#users li').innerText = nameInput.value || "Unnamed";
+        }
+    </script>
+</body>
+</html>
