@@ -5,76 +5,85 @@
     <title>Void Chat</title>
     <script src="https://js.pusher.com/8.0.1/pusher.min.js"></script>
     <style>
-        body { background-color: #000; color: white; font-family: sans-serif; display: flex; height: 100vh; margin: 0; overflow: hidden; }
-        #user-list { width: 20%; border-right: 1px solid #333; padding: 20px; background: #0a0a0a; }
+        body { background-color: #000; color: white; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; height: 100vh; margin: 0; overflow: hidden; }
+        
+        /* Left Panel */
+        #user-list { width: 20%; border-right: 1px solid #333; padding: 20px; background: #0a0a0a; box-shadow: 2px 0 10px rgba(0,0,0,0.5); }
+        
+        /* Center Chat */
         #chat-area { flex: 1; display: flex; flex-direction: column; background: #111; }
-        #messages { flex: 1; padding: 20px; overflow-y: auto; color: white; }
-        #input-area { padding: 20px; border-top: 1px solid #333; display: flex; }
-        input { background: #222; border: 1px solid #444; color: white; padding: 10px; flex: 1; outline: none; }
+        #messages { flex: 1; padding: 25px; overflow-y: auto; color: #ddd; scrollbar-width: thin; }
+        #messages b { color: #888; margin-right: 8px; }
+        
+        /* Input Bar */
+        #input-area { padding: 20px; border-top: 1px solid #333; background: #0a0a0a; display: flex; }
+        input { background: #1a1a1a; border: 1px solid #333; color: white; padding: 12px; flex: 1; border-radius: 5px; outline: none; }
+        input:focus { border-color: #555; }
+
+        /* Right Panel */
         #settings { width: 20%; border-left: 1px solid #333; padding: 20px; background: #0a0a0a; }
         .admin-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #333; }
-        img { max-width: 300px; border-radius: 8px; display: block; margin: 10px 0; }
-        .system-msg { color: #555; font-style: italic; font-size: 0.9em; }
+        
+        img { max-width: 100%; border-radius: 8px; margin: 10px 0; border: 1px solid #444; }
+        .system { color: #ff4444; font-weight: bold; }
+        h3 { border-bottom: 1px solid #222; padding-bottom: 10px; color: #555; text-transform: uppercase; font-size: 0.9em; }
     </style>
 </head>
 <body>
 
     <div id="user-list">
         <h3>Online</h3>
-        <ul id="users"><li>Unnamed (You)</li></ul>
+        <ul id="users" style="list-style: none; padding: 0;"><li>Unnamed (You)</li></ul>
     </div>
 
     <div id="chat-area">
         <div id="messages"></div>
         <div id="input-area">
-            <input type="text" id="msgInput" placeholder="Type message or Image/GIF URL...">
+            <input type="text" id="msgInput" placeholder="Send a message or GIF link...">
         </div>
     </div>
 
     <div id="settings">
         <h3>Settings</h3>
-        <label>Your Name:</label><br>
-        <input type="text" id="nameInput" placeholder="Unnamed" maxlength="15"><br><br>
+        <label style="color: #555; font-size: 0.8em;">USERNAMNE</label><br>
+        <input type="text" id="nameInput" placeholder="Unnamed" oninput="updateName()" maxlength="12"><br><br>
         
         <div class="admin-section">
-            <label>Admin Key:</label><br>
-            <input type="password" id="adminKey" placeholder="Enter key...">
+            <label style="color: #555; font-size: 0.8em;">ADMIN KEY</label><br>
+            <input type="password" id="adminKey" placeholder="••••••••">
         </div>
     </div>
 
     <script>
-        // --- CONFIG ---
+        // CONFIG
         const PUSHER_KEY = "52d32fe20e7fcc47f6f9";
         const CLUSTER = "eu";
         const ADMIN_PASS = "ACC19240ADMIN05143";
         let isTimedOut = false;
 
-        // --- PUSHER SETUP ---
-        // Using 'endpointless' auth for client events (Easy Mode)
+        // PUSHER SETUP
         const pusher = new Pusher(PUSHER_KEY, { cluster: CLUSTER, forceTLS: true });
-        const channel = pusher.subscribe('cache-chat'); 
+        const channel = pusher.subscribe('private-chat'); 
 
-        // Listen for messages
+        // Listen for messages from others
         channel.bind('client-msg', function(data) {
-            if (data.type === 'img') {
-                renderImg(data.name, data.text);
-            } else {
-                renderText(data.name, data.text);
-            }
+            if (data.type === 'img') { addImg(data.name, data.text); } 
+            else { addMessage(data.name, data.text, "white"); }
         });
 
-        // Listen for timeouts
+        // Listen for admin timeouts
         channel.bind('client-timeout', function(data) {
-            renderText("SYSTEM", `${data.target} has been timed out for 5 mins.`, "#ff4444");
-            if (document.getElementById('nameInput').value === data.target) {
+            addMessage("SYSTEM", `${data.target} has been timed out for 5 mins.`, "red");
+            if (nameInput.value === data.target) {
                 isTimedOut = true;
                 setTimeout(() => { isTimedOut = false; }, 300000);
             }
         });
 
-        // --- UI LOGIC ---
         const msgInput = document.getElementById('msgInput');
+        const messages = document.getElementById('messages');
         const nameInput = document.getElementById('nameInput');
+        const adminKey = document.getElementById('adminKey');
 
         msgInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') {
@@ -84,48 +93,47 @@
                 let username = nameInput.value || "Unnamed";
                 if (!val) return;
 
-                // Admin Timeout Command
+                // Admin Logic
                 if (val.startsWith('/timeout ')) {
-                    if (document.getElementById('adminKey').value === ADMIN_PASS) {
-                        let target = val.replace('/timeout @', '').replace('/timeout ', '');
+                    if (adminKey.value === ADMIN_PASS) {
+                        let target = val.replace('/timeout ', '').replace('@', '');
                         channel.trigger('client-timeout', { target: target });
                     } else {
-                        renderText("SYSTEM", "Wrong Admin Key geg.", "#ff4444");
+                        addMessage("SYSTEM", "Wrong Admin Key, geg.", "red");
                     }
                 } 
-                // Image Detection
+                // Image Logic
                 else if (val.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
                     channel.trigger('client-msg', { name: username, text: val, type: 'img' });
-                    renderImg(username, val);
+                    addImg(username, val);
                 } 
-                // Normal Chat
+                // Text Logic
                 else {
                     channel.trigger('client-msg', { name: username, text: val, type: 'text' });
-                    renderText(username, val);
+                    addMessage(username, val, "white");
                 }
                 msgInput.value = '';
             }
         });
 
-        function renderText(user, text, color = "white") {
+        function addMessage(user, text, color) {
             let div = document.createElement('div');
-            div.style.marginBottom = "10px";
-            div.innerHTML = `<b style="color: grey">${user}:</b> <span style="color: ${color}">${text}</span>`;
-            document.getElementById('messages').appendChild(div);
-            scrollDown();
+            div.style.marginBottom = "12px";
+            div.innerHTML = `<b style="${user === 'SYSTEM' ? 'color:red' : ''}">${user}:</b> <span style="color:${color}">${text}</span>`;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
         }
 
-        function renderImg(user, url) {
+        function addImg(user, url) {
             let div = document.createElement('div');
-            div.style.marginBottom = "10px";
-            div.innerHTML = `<b style="color: grey">${user}:</b><br><img src="${url}">`;
-            document.getElementById('messages').appendChild(div);
-            scrollDown();
+            div.style.marginBottom = "12px";
+            div.innerHTML = `<b>${user}:</b><br><img src="${url}">`;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
         }
 
-        function scrollDown() {
-            const chat = document.getElementById('messages');
-            chat.scrollTop = chat.scrollHeight;
+        function updateName() {
+            document.querySelector('#users li').innerText = (nameInput.value || "Unnamed") + " (You)";
         }
     </script>
 </body>
