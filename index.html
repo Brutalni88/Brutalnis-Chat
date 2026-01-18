@@ -1,40 +1,40 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>Void Chat</title>
+    <script src="https://js.pusher.com/8.0.1/pusher.min.js"></script>
     <style>
-        body { background-color: #000; color: white; font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
-        /* Left Panel: Users */
+        body { background-color: #000; color: white; font-family: sans-serif; display: flex; height: 100vh; margin: 0; overflow: hidden; }
         #user-list { width: 20%; border-right: 1px solid #333; padding: 20px; background: #0a0a0a; }
-        /* Center: Chat */
         #chat-area { flex: 1; display: flex; flex-direction: column; background: #111; }
         #messages { flex: 1; padding: 20px; overflow-y: auto; color: white; }
         #input-area { padding: 20px; border-top: 1px solid #333; display: flex; }
-        input { background: #222; border: 1px solid #444; color: white; padding: 10px; flex: 1; }
-        /* Right Panel: Settings */
+        input { background: #222; border: 1px solid #444; color: white; padding: 10px; flex: 1; outline: none; }
         #settings { width: 20%; border-left: 1px solid #333; padding: 20px; background: #0a0a0a; }
         .admin-section { margin-top: 20px; padding-top: 20px; border-top: 1px solid #333; }
-        img { max-width: 200px; display: block; margin: 10px 0; }
+        img { max-width: 300px; border-radius: 8px; display: block; margin: 10px 0; }
+        .system-msg { color: #555; font-style: italic; font-size: 0.9em; }
     </style>
 </head>
 <body>
 
     <div id="user-list">
         <h3>Online</h3>
-        <ul id="users"><li>Unnamed</li></ul>
+        <ul id="users"><li>Unnamed (You)</li></ul>
     </div>
 
     <div id="chat-area">
         <div id="messages"></div>
         <div id="input-area">
-            <input type="text" id="msgInput" placeholder="Type a message or image URL...">
+            <input type="text" id="msgInput" placeholder="Type message or Image/GIF URL...">
         </div>
     </div>
 
     <div id="settings">
         <h3>Settings</h3>
         <label>Your Name:</label><br>
-        <input type="text" id="nameInput" placeholder="Unnamed" oninput="updateName()"><br><br>
+        <input type="text" id="nameInput" placeholder="Unnamed" maxlength="15"><br><br>
         
         <div class="admin-section">
             <label>Admin Key:</label><br>
@@ -43,53 +43,89 @@
     </div>
 
     <script>
-        const msgInput = document.getElementById('msgInput');
-        const messages = document.getElementById('messages');
-        const nameInput = document.getElementById('nameInput');
-        const adminKey = document.getElementById('adminKey');
+        // --- CONFIG ---
+        const PUSHER_KEY = "52d32fe20e7fcc47f6f9";
+        const CLUSTER = "eu";
         const ADMIN_PASS = "ACC19240ADMIN05143";
+        let isTimedOut = false;
+
+        // --- PUSHER SETUP ---
+        // Using 'endpointless' auth for client events (Easy Mode)
+        const pusher = new Pusher(PUSHER_KEY, { cluster: CLUSTER, forceTLS: true });
+        const channel = pusher.subscribe('cache-chat'); 
+
+        // Listen for messages
+        channel.bind('client-msg', function(data) {
+            if (data.type === 'img') {
+                renderImg(data.name, data.text);
+            } else {
+                renderText(data.name, data.text);
+            }
+        });
+
+        // Listen for timeouts
+        channel.bind('client-timeout', function(data) {
+            renderText("SYSTEM", `${data.target} has been timed out for 5 mins.`, "#ff4444");
+            if (document.getElementById('nameInput').value === data.target) {
+                isTimedOut = true;
+                setTimeout(() => { isTimedOut = false; }, 300000);
+            }
+        });
+
+        // --- UI LOGIC ---
+        const msgInput = document.getElementById('msgInput');
+        const nameInput = document.getElementById('nameInput');
 
         msgInput.addEventListener('keypress', function (e) {
             if (e.key === 'Enter') {
-                let val = msgInput.value;
+                if (isTimedOut) { alert("You are timed out saar."); return; }
+                
+                let val = msgInput.value.trim();
                 let username = nameInput.value || "Unnamed";
+                if (!val) return;
 
-                // Admin Logic for Timeout
+                // Admin Timeout Command
                 if (val.startsWith('/timeout ')) {
-                    if (adminKey.value === ADMIN_PASS) {
-                        let target = val.replace('/timeout ', '');
-                        addMessage("System", `User ${target} has been timed out for 5 mins.`, "red");
+                    if (document.getElementById('adminKey').value === ADMIN_PASS) {
+                        let target = val.replace('/timeout @', '').replace('/timeout ', '');
+                        channel.trigger('client-timeout', { target: target });
                     } else {
-                        addMessage("System", "Wrong Admin Key, geg.", "red");
+                        renderText("SYSTEM", "Wrong Admin Key geg.", "#ff4444");
                     }
                 } 
-                // Image/GIF Logic
-                else if (val.match(/\.(jpeg|jpg|gif|png)$/) != null) {
-                    addImg(username, val);
+                // Image Detection
+                else if (val.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
+                    channel.trigger('client-msg', { name: username, text: val, type: 'img' });
+                    renderImg(username, val);
                 } 
-                // Normal Text
+                // Normal Chat
                 else {
-                    addMessage(username, val, "white");
+                    channel.trigger('client-msg', { name: username, text: val, type: 'text' });
+                    renderText(username, val);
                 }
                 msgInput.value = '';
             }
         });
 
-        function addMessage(user, text, color) {
+        function renderText(user, text, color = "white") {
             let div = document.createElement('div');
-            div.style.color = color;
-            div.innerHTML = `<b>${user}:</b> ${text}`;
-            messages.appendChild(div);
+            div.style.marginBottom = "10px";
+            div.innerHTML = `<b style="color: grey">${user}:</b> <span style="color: ${color}">${text}</span>`;
+            document.getElementById('messages').appendChild(div);
+            scrollDown();
         }
 
-        function addImg(user, url) {
+        function renderImg(user, url) {
             let div = document.createElement('div');
-            div.innerHTML = `<b>${user}:</b><br><img src="${url}">`;
-            messages.appendChild(div);
+            div.style.marginBottom = "10px";
+            div.innerHTML = `<b style="color: grey">${user}:</b><br><img src="${url}">`;
+            document.getElementById('messages').appendChild(div);
+            scrollDown();
         }
 
-        function updateName() {
-            document.querySelector('#users li').innerText = nameInput.value || "Unnamed";
+        function scrollDown() {
+            const chat = document.getElementById('messages');
+            chat.scrollTop = chat.scrollHeight;
         }
     </script>
 </body>
